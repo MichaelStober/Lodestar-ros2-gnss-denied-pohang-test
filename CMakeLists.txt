@@ -33,7 +33,25 @@ find_package(angles REQUIRED)
 # ------------------------------------------------------- system libraries ---
 find_package(PCL 1.12 REQUIRED COMPONENTS common io filters kdtree search)
 find_package(OpenCV 4 REQUIRED)
+
+# glog must be resolved BEFORE Ceres. Ceres' exported target Ceres::ceres lists
+# glog::glog in its link interface, but CeresConfig.cmake looks for it with
+# `find_package(glog <ver> CONFIG QUIET)` and does not fail when that search
+# comes up empty. The build then dies much later, during the generate step, with
+# an opaque "The link interface of target Ceres::ceres contains glog::glog but
+# the target was not found". Resolving it here turns that into a message that
+# names the actual problem.
+find_package(glog CONFIG QUIET)
 find_package(Ceres 2.0 REQUIRED)
+if(NOT TARGET glog::glog AND NOT CERES_USES_MINIGLOG)
+  message(FATAL_ERROR
+    "Ceres requires the glog::glog CMake target, which was not found.\n"
+    "  Install it with:  sudo apt install libgoogle-glog-dev\n"
+    "  If it IS installed, a different glog (commonly from a conda environment) "
+    "is being found first and failing Ceres' version check. Build with conda "
+    "deactivated, or point CMake at the system one:\n"
+    "    --cmake-args -Dglog_DIR=/usr/lib/x86_64-linux-gnu/cmake/glog")
+endif()
 find_package(Eigen3 REQUIRED NO_MODULE)
 find_package(Boost REQUIRED COMPONENTS program_options)
 find_package(OpenMP REQUIRED)

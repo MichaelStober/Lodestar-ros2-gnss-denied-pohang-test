@@ -77,7 +77,31 @@ export LIBGL_ALWAYS_SOFTWARE=1
 
 Das kostet Bildrate, ist für das Betrachten von Punktwolken aber völlig ausreichend. Zum Dauerhaftmachen in `~/.bashrc` eintragen.
 
-### 1.4 Arbeitsspeicher konfigurieren (empfohlen)
+### 1.4 Conda aus dem Weg räumen (falls installiert)
+
+Wenn dein Shell-Prompt mit `(base)` beginnt, ist Anaconda oder Miniconda aktiv. Das bricht den ROS-Build auf zwei Arten, und beide Fehlermeldungen zeigen nicht auf die Ursache.
+
+Erstens findet CMake Condas Python statt dem System-Python und damit `catkin_pkg` nicht:
+
+```
+execute_process(/home/<user>/miniconda3/bin/python3 ... package_xml_2_cmake.py)
+ModuleNotFoundError: No module named 'catkin_pkg'
+```
+
+Zweitens schiebt Conda eigene Versionen von `libstdc++`, `glog`, `gflags`, `libtiff` und oft OpenCV und VTK in Such- und Loader-Pfade. Die überschatten die Systembibliotheken, gegen die PCL, OpenCV und Ceres gebaut sind — das gibt entweder kryptische CMake-Fehler oder, schlimmer, Abstürze erst zur Laufzeit.
+
+Abhilfe, einmalig:
+
+```bash
+conda config --set auto_activate_base false
+conda deactivate
+exec $SHELL          # neue Shell, danach kein (base) mehr im Prompt
+which python3        # muss /usr/bin/python3 sein
+```
+
+`conda activate <env>` funktioniert für andere Projekte weiterhin manuell — nur eben nicht mehr automatisch beim Shell-Start. ROS 2 baust und startest du ohne aktives Conda.
+
+### 1.5 Arbeitsspeicher konfigurieren (empfohlen)
 
 Der Build ist template-lastig (Ceres, PCL, Eigen). Standardmäßig nimmt WSL2 sich bis zu 50 % des RAM, aber begrenzt die Swap-Größe. Lege unter Windows `C:\Users\michi\.wslconfig` an:
 
@@ -273,7 +297,9 @@ Der Code wurde gegen nachgebaute rclcpp-Header verifiziert. Die folgenden Stelle
 | `no member named 'toSec'` / `'toNSec'` | irgendwo | Eine `ros::Time`-Stelle wurde übersehen. `.seconds()` bzw. `.nanoseconds()` verwenden. |
 | `can't subtract times with different time sources` **zur Laufzeit** | Zeitmessung | Eine `node_->now()`-Differenz wurde mit einer Bag-Zeit gemischt. Alle Laufzeitmessungen laufen über `std::chrono` und `ToMsSince()`; dort nachsehen. |
 | `undefined reference to pcl::...` | Linkphase | `${PCL_LIBRARIES}` muss an die **Bibliothek** gelinkt sein, nicht nur ans Executable. Steht so im CMakeLists — prüfen, ob `find_package(PCL ...)` die Komponenten gefunden hat. |
-| `c++: fatal error: Killed signal terminated program cc1plus` | Build bricht scheinbar zufällig ab | Kein Codefehler, sondern RAM. Siehe 1.4, oder `colcon build --executor sequential --parallel-workers 1`. |
+| `ModuleNotFoundError: No module named 'catkin_pkg'` und ein Pfad nach `miniconda3/bin/python3` | — | Conda ist aktiv und schattet das System-Python. Siehe 1.4. Danach zwingend `rm -rf build install log`, weil der Conda-Pfad in `CMakeCache.txt` gecacht ist. |
+| `The link interface of target "Ceres::ceres" contains: glog::glog but the target was not found` | `CMakeLists.txt` | `find_package(glog 0.6.0 CONFIG QUIET)` in Ceres' eigener Config schlägt fehl, bricht aber nicht ab — der Fehler kommt erst im Generate-Schritt. Das CMakeLists fängt das inzwischen mit einer klaren Meldung ab. Prüfe `dpkg -l | grep glog` und ob Conda ein eigenes glog mitbringt; als Sofortlösung `--cmake-args -Dglog_DIR=/usr/lib/x86_64-linux-gnu/cmake/glog`. |
+| `c++: fatal error: Killed signal terminated program cc1plus` | Build bricht scheinbar zufällig ab | Kein Codefehler, sondern RAM. Siehe 1.5, oder `colcon build --executor sequential --parallel-workers 1`. |
 
 Bei einem Fehler, der hier nicht steht: die vollständige Meldung mit Datei und Zeile ist aussagekräftig, der erste Fehler zählt, nicht die Folgefehler.
 
