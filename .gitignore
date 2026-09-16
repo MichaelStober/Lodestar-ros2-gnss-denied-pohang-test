@@ -1,0 +1,12 @@
+# colcon / ament
+build/
+install/
+log/
+
+# Python
+__pycache__/
+*.pyc
+
+# evaluation output
+eval/
+*.pcd

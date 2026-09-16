@@ -1,157 +1,180 @@
 Panels:
-  - Class: rviz/Displays
-    Help Height: 78
-    Name: Displays
-    Property Tree Widget:
-      Expanded:
-        - /Global Options1
-        - /Status1
-        - /Grid1
-        - /Estimated - Odometry1
-        - /Estimated - Odometry1/Shape1
-        - /Estimated - Odometry1/Covariance1
-        - /Estimated - Odometry1/Covariance1/Position1
-      Splitter Ratio: 0.39673104882240295
-    Tree Height: 826
-  - Class: rviz/Selection
-    Name: Selection
-  - Class: rviz/Tool Properties
+- Class: rviz_common/Displays
+  Help Height: 78
+  Name: Displays
+  Property Tree Widget:
     Expanded:
-      - /2D Pose Estimate1
-      - /2D Nav Goal1
-      - /Publish Point1
-    Name: Tool Properties
-    Splitter Ratio: 0.5886790156364441
-  - Class: rviz/Views
-    Expanded:
-      - /Current View1
-    Name: Views
-    Splitter Ratio: 0.5
-  - Class: rviz/Time
-    Experimental: false
-    Name: Time
-    SyncMode: 0
-    SyncSource: Map - PointCloud2
+    - /Global Options1
+    - /Status1
+    - /Grid1
+    - /Estimated - Odometry1
+    - /Estimated - Odometry1/Shape1
+    - /Estimated - Odometry1/Covariance1
+    - /Estimated - Odometry1/Covariance1/Position1
+    Splitter Ratio: 0.39673104882240295
+  Tree Height: 826
+- Class: rviz_common/Selection
+  Name: Selection
+- Class: rviz_common/Tool Properties
+  Expanded:
+  - /2D Pose Estimate1
+  - /2D Nav Goal1
+  - /Publish Point1
+  Name: Tool Properties
+  Splitter Ratio: 0.5886790156364441
+- Class: rviz_common/Views
+  Expanded:
+  - /Current View1
+  Name: Views
+  Splitter Ratio: 0.5
+- Class: rviz_common/Time
+  Name: Time
+  SyncMode: 0
+  SyncSource: Map - PointCloud2
 Preferences:
   PromptSaveOnExit: true
 Toolbars:
   toolButtonStyle: 2
 Visualization Manager:
-  Class: ""
+  Class: ''
   Displays:
-    - Alpha: 0.10000000149011612
-      Cell Size: 10
-      Class: rviz/Grid
-      Color: 160; 160; 164
-      Enabled: false
-      Line Style:
-        Line Width: 0.029999999329447746
-        Value: Lines
-      Name: Grid
-      Normal Cell Count: 0
-      Offset:
-        X: 0
-        Y: 0
-        Z: 0
-      Plane: XY
-      Plane Cell Count: 1000
-      Reference Frame: world
-      Value: false
-    - Alpha: 0.009999999776482582
-      Autocompute Intensity Bounds: false
-      Autocompute Value Bounds:
-        Max Value: 10
-        Min Value: -10
-        Value: true
-      Axis: Z
-      Channel Name: intensity
-      Class: rviz/PointCloud2
-      Color: 0; 0; 0
-      Color Transformer: FlatColor
-      Decay Time: 10000
-      Enabled: true
-      Invert Rainbow: false
-      Max Color: 0; 0; 0
-      Max Intensity: 80
-      Min Color: 255; 255; 255
-      Min Intensity: 60
-      Name: Map - PointCloud2
-      Position Transformer: XYZ
-      Queue Size: 10
-      Selectable: true
-      Size (Pixels): 1
-      Size (m): 0.05000000074505806
-      Style: Points
-      Topic: /lodestar_odom_node/radar_registered
-      Unreliable: false
-      Use Fixed Frame: true
-      Use rainbow: false
+  - Alpha: 0.10000000149011612
+    Cell Size: 10
+    Class: rviz_default_plugins/Grid
+    Color: 160; 160; 164
+    Enabled: false
+    Line Style:
+      Line Width: 0.029999999329447746
+      Value: Lines
+    Name: Grid
+    Normal Cell Count: 0
+    Offset:
+      X: 0
+      Y: 0
+      Z: 0
+    Plane: XY
+    Plane Cell Count: 1000
+    Reference Frame: world
+    Value: false
+  - Alpha: 0.009999999776482582
+    Autocompute Intensity Bounds: false
+    Autocompute Value Bounds:
+      Max Value: 10
+      Min Value: -10
       Value: true
-    - Alpha: 1
-      Autocompute Intensity Bounds: false
-      Autocompute Value Bounds:
-        Max Value: 10
-        Min Value: -10
-        Value: true
-      Axis: Z
-      Channel Name: intensity
-      Class: rviz/PointCloud2
-      Color: 255; 255; 255
-      Color Transformer: Intensity
-      Decay Time: 0
-      Enabled: false
-      Invert Rainbow: false
-      Max Color: 255; 255; 255
-      Max Intensity: 157
-      Min Color: 0; 0; 0
-      Min Intensity: 60
-      Name: Latest scan Pt- PointCloud2
-      Position Transformer: XYZ
-      Queue Size: 10
-      Selectable: true
-      Size (Pixels): 3
-      Size (m): 0.009999999776482582
-      Style: Points
-      Topic: /lodestar_odom_node/radar_registered
-      Unreliable: false
-      Use Fixed Frame: true
-      Use rainbow: true
-      Value: false
-    - Angle Tolerance: 1
-      Class: rviz/Odometry
-      Covariance:
-        Orientation:
-          Alpha: 0.5
-          Color: 255; 255; 127
-          Color Style: Unique
-          Frame: Local
-          Offset: 1
-          Scale: 1
-          Value: true
-        Position:
-          Alpha: 0.30000001192092896
-          Color: 204; 51; 204
-          Scale: 3
-          Value: true
-        Value: false
-      Enabled: true
-      Keep: 100000
-      Name: Estimated - Odometry
-      Position Tolerance: 0.5
-      Queue Size: 10
-      Shape:
-        Alpha: 1
-        Axes Length: 1
-        Axes Radius: 0.10000000149011612
-        Color: 138; 226; 52
-        Head Length: 0.5
-        Head Radius: 1
-        Shaft Length: 0.5
-        Shaft Radius: 1
-        Value: Arrow
-      Topic: /lodestar_odom_node/radar_odom
-      Unreliable: true
+    Axis: Z
+    Channel Name: intensity
+    Class: rviz_default_plugins/PointCloud2
+    Color: 0; 0; 0
+    Color Transformer: FlatColor
+    Decay Time: 10000
+    Enabled: true
+    Filter size: 10
+    Invert Rainbow: false
+    Max Color: 0; 0; 0
+    Max Intensity: 80
+    Min Color: 255; 255; 255
+    Min Intensity: 60
+    Name: Map - PointCloud2
+    Position Transformer: XYZ
+    Selectable: true
+    Size (Pixels): 1
+    Size (m): 0.05000000074505806
+    Style: Points
+    Topic:
+      Depth: 10
+      Durability Policy: Volatile
+      History Policy: Keep Last
+      Reliability Policy: Reliable
+      Value: /lodestar_odom_node/radar_registered
+    Use Fixed Frame: true
+    Use rainbow: false
+    Value: true
+  - Alpha: 1
+    Autocompute Intensity Bounds: false
+    Autocompute Value Bounds:
+      Max Value: 10
+      Min Value: -10
       Value: true
+    Axis: Z
+    Channel Name: intensity
+    Class: rviz_default_plugins/PointCloud2
+    Color: 255; 255; 255
+    Color Transformer: Intensity
+    Decay Time: 0
+    Enabled: false
+    Filter size: 10
+    Invert Rainbow: false
+    Max Color: 255; 255; 255
+    Max Intensity: 157
+    Min Color: 0; 0; 0
+    Min Intensity: 60
+    Name: Latest scan Pt- PointCloud2
+    Position Transformer: XYZ
+    Selectable: true
+    Size (Pixels): 3
+    Size (m): 0.009999999776482582
+    Style: Points
+    Topic:
+      Depth: 10
+      Durability Policy: Volatile
+      History Policy: Keep Last
+      Reliability Policy: Reliable
+      Value: /lodestar_odom_node/radar_registered
+    Use Fixed Frame: true
+    Use rainbow: true
+    Value: false
+  - Angle Tolerance: 1
+    Class: rviz_default_plugins/Odometry
+    Covariance:
+      Orientation:
+        Alpha: 0.5
+        Color: 255; 255; 127
+        Color Style: Unique
+        Frame: Local
+        Offset: 1
+        Scale: 1
+        Value: true
+      Position:
+        Alpha: 0.30000001192092896
+        Color: 204; 51; 204
+        Scale: 3
+        Value: true
+      Value: false
+    Enabled: true
+    Keep: 100000
+    Name: Estimated - Odometry
+    Position Tolerance: 0.5
+    Shape:
+      Alpha: 1
+      Axes Length: 1
+      Axes Radius: 0.10000000149011612
+      Color: 138; 226; 52
+      Head Length: 0.5
+      Head Radius: 1
+      Shaft Length: 0.5
+      Shaft Radius: 1
+      Value: Arrow
+    Topic:
+      Depth: 10
+      Durability Policy: Volatile
+      History Policy: Keep Last
+      Reliability Policy: Reliable
+      Value: /lodestar_odom_node/radar_odom
+    Value: true
+  - Class: rviz_default_plugins/TF
+    Enabled: false
+    Frame Timeout: 15
+    Frames:
+      All Enabled: true
+    Marker Scale: 10
+    Name: TF
+    Show Arrows: true
+    Show Axes: true
+    Show Names: true
+    Tree: {}
+    Update Interval: 0
+    Value: false
   Enabled: true
   Global Options:
     Background Color: 255; 255; 255
@@ -160,26 +183,41 @@ Visualization Manager:
     Frame Rate: 30
   Name: root
   Tools:
-    - Class: rviz/Interact
-      Hide Inactive Objects: true
-    - Class: rviz/MoveCamera
-    - Class: rviz/Select
-    - Class: rviz/FocusCamera
-    - Class: rviz/Measure
-    - Class: rviz/SetInitialPose
-      Theta std deviation: 0.2617993950843811
-      Topic: /initialpose
-      X std deviation: 0.5
-      Y std deviation: 0.5
-    - Class: rviz/SetGoal
-      Topic: /move_base_simple/goal
-    - Class: rviz/PublishPoint
-      Single click: true
-      Topic: /clicked_point
+  - Class: rviz_default_plugins/Interact
+    Hide Inactive Objects: true
+  - Class: rviz_default_plugins/MoveCamera
+  - Class: rviz_default_plugins/Select
+  - Class: rviz_default_plugins/FocusCamera
+  - Class: rviz_default_plugins/Measure
+  - Class: rviz_default_plugins/SetInitialPose
+    Theta std deviation: 0.2617993950843811
+    Topic:
+      Depth: 5
+      Durability Policy: Volatile
+      History Policy: Keep Last
+      Reliability Policy: Reliable
+      Value: /initialpose
+    X std deviation: 0.5
+    Y std deviation: 0.5
+  - Class: rviz_default_plugins/SetGoal
+    Topic:
+      Depth: 5
+      Durability Policy: Volatile
+      History Policy: Keep Last
+      Reliability Policy: Reliable
+      Value: /move_base_simple/goal
+  - Class: rviz_default_plugins/PublishPoint
+    Single click: true
+    Topic:
+      Depth: 5
+      Durability Policy: Volatile
+      History Policy: Keep Last
+      Reliability Policy: Reliable
+      Value: /clicked_point
   Value: true
   Views:
     Current:
-      Class: rviz/ThirdPersonFollower
+      Class: rviz_default_plugins/ThirdPersonFollower
       Distance: 260.8135986328125
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
@@ -199,7 +237,7 @@ Visualization Manager:
       Pitch: 1.5697963237762451
       Target Frame: radar_link
       Yaw: 2.11039662361145
-    Saved: ~
+    Saved: null
 Window Geometry:
   Displays:
     collapsed: false

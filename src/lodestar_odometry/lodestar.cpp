@@ -2,15 +2,24 @@
 
 namespace lodestar_odom {
 
-lodestar::lodestar(const Parameters& pars, bool disable_callback):par(pars),nh_("~"), it(nh_) {
+lodestar::lodestar(const Parameters& pars, rclcpp::Node::SharedPtr node, bool disable_callback)
+    : par(pars), node_(node) {
 
   min_distance_sqrd = par.min_distance*par.min_distance;
-  FilteredPublisher = nh_.advertise<pcl::PointCloud<pcl::PointXYZI>>(par.topic_filtered, 1000);
-  //image_transport::Publisher img_pub = it.advertise("/",1000);
-  imgPublisher = nh_.advertise<sensor_msgs::Image>("/radar_imported", 1000);
-  rotPublisher = nh_.advertise<nav_msgs::Odometry>("/rot_lodestar", 1000);
+  max_distance_sqrd = par.max_distance*par.max_distance;
+  Trot = Eigen::Affine3d::Identity();
+  cloud_filtered = pcl::PointCloud<pcl::PointXYZI>::Ptr(new pcl::PointCloud<pcl::PointXYZI>());
+
+  FilteredPublisher = node_->create_publisher<sensor_msgs::msg::PointCloud2>(
+      PrivateTopic(par.topic_filtered), rclcpp::QoS(1000));
+  imgPublisher = node_->create_publisher<sensor_msgs::msg::Image>(
+      PrivateTopic("/radar_imported"), rclcpp::QoS(1000));
+  rotPublisher = node_->create_publisher<nav_msgs::msg::Odometry>(
+      PrivateTopic("/rot_lodestar"), rclcpp::QoS(1000));
   if(!disable_callback){
-      sub = nh_.subscribe<sensor_msgs::Image>(pars.radar_topic, 1000, &lodestar::Callback, this);
+      sub = node_->create_subscription<sensor_msgs::msg::Image>(
+          PrivateTopic(pars.radar_topic), rclcpp::QoS(1000),
+          std::bind(&lodestar::Callback, this, std::placeholders::_1));
   }
 }
 /*
@@ -24,19 +33,19 @@ void lodestar::InitAngles(){
   }
 }
 */
-void lodestar::Callback(const sensor_msgs::ImageConstPtr &marine_radar_img){
-    if(marine_radar_img==NULL){
+void lodestar::Callback(const sensor_msgs::msg::Image::ConstSharedPtr &marine_radar_img){
+    if(!marine_radar_img){
         cerr<<"Radar image NULL"<<endl;
         exit(0);
     }
-  ros::Time t0 = ros::Time::now();
+  const auto t0 = std::chrono::steady_clock::now();
   cv_bridge::CvImagePtr cv_marine_img;
   cv_marine_img = cv_bridge::toCvCopy(marine_radar_img, sensor_msgs::image_encodings::MONO8);
   cv_marine_img->header.stamp = marine_radar_img->header.stamp;
 
 /////////////////////////////////////LodeSTAR///////////////////////////////////////////////////////////
 
-ros::Time lodestar_start = ros::Time::now();
+const auto lodestar_start = std::chrono::steady_clock::now();
   //Generate polar image for cross correlation
   cv::Mat pol_img = polar_transform(cv_marine_img->image);
   window_list.push_back(pol_img);
@@ -57,10 +66,9 @@ ros::Time lodestar_start = ros::Time::now();
   cv::Mat rot_mat = cv::getRotationMatrix2D(center_i, acc_rots, 1);
   cv::Mat rotated_image;
   cv::warpAffine(cv_marine_img->image, cv_marine_img->image, rot_mat, cv_marine_img->image.size());
-ros::Time lodestar_end = ros::Time::now();
-ros::Duration lodestar_time = lodestar_end-lodestar_start;
+const double lodestar_time_ms = ToMsSince(lodestar_start);
 
-cout << "Lodestar Computation time ================== " << lodestar_time << endl;
+cout << "Lodestar Computation time ================== " << lodestar_time_ms << " ms" << endl;
 
 /////////////////////////////////////LodeSTAR///////////////////////////////////////////////////////////
 
@@ -79,19 +87,15 @@ cout << "Lodestar Computation time ================== " << lodestar_time << endl
   cloud_filtered = pcl::PointCloud<pcl::PointXYZI>::Ptr(new pcl::PointCloud<pcl::PointXYZI>());
   cv::Mat img_th;
 
-    ros::Time contour_start = ros::Time::now();
+    const auto contour_start = std::chrono::steady_clock::now();
   cv::threshold(cv_marine_img->image,img_th, par.contour_threshold, 255, cv::THRESH_TOZERO); // Contour Extraction
-    ros::Time contour_end = ros::Time::now();
-    ros::Duration contour_time = contour_end-contour_start;
-    cout << "Contour Computation time =================== " << contour_time << endl;
+    cout << "Contour Computation time =================== " << ToMsSince(contour_start) << " ms" << endl;
 
-    ros::Time k_nearest_start = ros::Time::now();
+    const auto k_nearest_start = std::chrono::steady_clock::now();
   cv::Mat img = polarToNearPol(img_th,par.k_nearest); // K-Nearest feature
   //cv::Mat img = polarToNearPol(cv_marine_img->image, 10); // for K-Nearest feature only estimation
   //cv::Mat img = img_th; //for contour only estimation
-    ros::Time k_nearest_end = ros::Time::now();
-    ros::Duration k_nearest_time = k_nearest_end-k_nearest_start;
-    cout << "k_nearest Computation time ================= " << k_nearest_time << endl;
+    cout << "k_nearest Computation time ================= " << ToMsSince(k_nearest_start) << " ms" << endl;
     
     //imshow("lodestarred.",img);
     //imwrite("lck50.jpg", img);
@@ -100,27 +104,38 @@ cout << "Lodestar Computation time ================== " << lodestar_time << endl
 //Image to pointcloud conversion & publish for next step
   cloud_filtered = toPointCloud(img, par.range_res);
   cloud_filtered->header.frame_id = par.radar_frameid;
-  ros::Time tstamp = marine_radar_img->header.stamp.toSec() < 0.001 ? ros::Time::now() : marine_radar_img->header.stamp;;
+  const rclcpp::Time msg_stamp(marine_radar_img->header.stamp);
+  const rclcpp::Time tstamp = msg_stamp.seconds() < 0.001 ? node_->now() : msg_stamp;
   pcl_conversions::toPCL(tstamp, cloud_filtered->header.stamp);
-  FilteredPublisher.publish(cloud_filtered);
-  sensor_msgs::ImagePtr img_msg = cv_bridge::CvImage(std_msgs::Header(), "MONO8", img).toImageMsg();
-  imgPublisher.publish(img_msg);
+
+  sensor_msgs::msg::PointCloud2 cloud_msg;
+  pcl::toROSMsg(*cloud_filtered, cloud_msg);
+  cloud_msg.header.frame_id = par.radar_frameid;
+  cloud_msg.header.stamp = tstamp;
+  FilteredPublisher->publish(cloud_msg);
+
+  // NOTE: the ROS 1 version passed "MONO8"; the canonical encoding string is
+  // lower case, otherwise subscribers reject the image.
+  sensor_msgs::msg::Image::SharedPtr img_msg =
+      cv_bridge::CvImage(std_msgs::msg::Header(), sensor_msgs::image_encodings::MONO8, img).toImageMsg();
+  img_msg->header.stamp = tstamp;
+  img_msg->header.frame_id = par.radar_frameid;
+  imgPublisher->publish(*img_msg);
 
 
 //Publish rotation information from lodestar algorithm
-  nav_msgs::Odometry rot_msg;
+  nav_msgs::msg::Odometry rot_msg;
   Eigen::Matrix3d rotMat;
   rotMat = Eigen::AngleAxisd(acc_rots*M_PI/180, Eigen::Vector3d::UnitZ()).toRotationMatrix();
   Trot = Eigen::Affine3d::Identity();
   Trot.rotate(rotMat);
-  rot_msg.header.stamp = ros::Time::now();
+  rot_msg.header.stamp = node_->now();
   rot_msg.header.frame_id = "world";
   rot_msg.child_frame_id = "sensor";
-  tf::poseEigenToMsg(Trot, rot_msg.pose.pose);
+  rot_msg.pose.pose = tf2::toMsg(Trot);
 
-  rotPublisher.publish(rot_msg);
-  ros::Time t2 = ros::Time::now();
-  lodestar_odom::timing.Document("Filtering",lodestar_odom::ToMs(t2-t0));
+  rotPublisher->publish(rot_msg);
+  lodestar_odom::timing.Document("Filtering", ToMsSince(t0));
 }
 
 double lodestar::rotationCorrection(const cv::Mat& img1, const cv::Mat& img2) {
@@ -243,7 +258,7 @@ pcl::PointCloud<pcl::PointXYZI>::Ptr lodestar::toPointCloud(const cv::Mat& radar
   return cloud;
 }
 
-void lodestar::CallbackOffline(const sensor_msgs::ImageConstPtr& marine_radar_img,  pcl::PointCloud<pcl::PointXYZI>::Ptr& cloud, Eigen::Affine3d &T, Eigen::Vector3d &v){
+void lodestar::CallbackOffline(const sensor_msgs::msg::Image::ConstSharedPtr& marine_radar_img,  pcl::PointCloud<pcl::PointXYZI>::Ptr& cloud, Eigen::Affine3d &T, Eigen::Vector3d &v){
   Callback(marine_radar_img);
   T = Trot;
   v = dense_trans;

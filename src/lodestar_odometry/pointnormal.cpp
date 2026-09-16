@@ -1,8 +1,38 @@
 #include "lodestar_odometry/pointnormal.h"
+
+#include <float.h>
+
+#include <std_msgs/msg/color_rgba.hpp>
+
 namespace lodestar_odom {
 
-std::map<std::string,ros::Publisher> MapPointNormal::pubs;
+std::map<std::string, rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr>
+    MapPointNormal::pubs;
+rclcpp::Node::SharedPtr MapPointNormal::node_ = nullptr;
 double MapPointNormal::downsample_factor = 1;
+
+namespace {
+
+/**
+ * Look up (or lazily create) the marker publisher for `topic`.
+ * Returns nullptr when no node has been installed via MapPointNormal::SetNode,
+ * in which case the caller skips publishing.
+ */
+rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr GetMarkerPublisher(
+    const std::string& topic, std::map<std::string, rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr>& pubs,
+    const rclcpp::Node::SharedPtr& node) {
+  if (!node)
+    return nullptr;
+  auto it = pubs.find(topic);
+  if (it == pubs.end()) {
+    pubs[topic] = node->create_publisher<visualization_msgs::msg::MarkerArray>(
+        PrivateTopic(topic), rclcpp::QoS(100));
+    it = pubs.find(topic);
+  }
+  return it->second;
+}
+
+}  // namespace
 
 cell::cell(const pcl::PointCloud<pcl::PointXYZI>::Ptr input, const std::vector<int>& pointIdxNKNSearch, const bool weight_intensity, const Eigen::Vector2d& origin) : Nsamples_(pointIdxNKNSearch.size()) {
   // Compute Covariance
@@ -305,8 +335,8 @@ inline pcl::PointXYZ PntXYZ(Eigen::Vector2d& u){
 
 
 
-visualization_msgs::Marker DefaultMarker( const ros::Time& time, const std::string& frame){
-  visualization_msgs::Marker marker;
+visualization_msgs::msg::Marker DefaultMarker( const rclcpp::Time& time, const std::string& frame){
+  visualization_msgs::msg::Marker marker;
 
   marker.header.frame_id = frame;
   marker.header.stamp = time;
@@ -314,10 +344,10 @@ visualization_msgs::Marker DefaultMarker( const ros::Time& time, const std::stri
   marker.ns = "point_cloud";
   marker.id = 0;
 
-  marker.type = visualization_msgs::Marker::ARROW;
-  marker.lifetime = ros::Duration(0.0);
+  marker.type = visualization_msgs::msg::Marker::ARROW;
+  marker.lifetime = rclcpp::Duration(0, 0);
 
-  marker.action = visualization_msgs::Marker::ADD;
+  marker.action = visualization_msgs::msg::Marker::ADD;
   marker.color.a = 1.0; // Don't forget to set the alpha!
   marker.color.r = 1.0;
   marker.color.g = 0.0;
@@ -343,9 +373,9 @@ void intToRGB(const int value,float& red,float& green, float& blue) {
 }
 
 
-visualization_msgs::MarkerArray Cells2Markers(std::vector<cell>& cells, const ros::Time& time, const std::string& frame, int val, float alpha){
-  visualization_msgs::MarkerArray marr;
-  visualization_msgs::Marker m = DefaultMarker(time, frame);
+visualization_msgs::msg::MarkerArray Cells2Markers(std::vector<cell>& cells, const rclcpp::Time& time, const std::string& frame, int val, float alpha){
+  visualization_msgs::msg::MarkerArray marr;
+  visualization_msgs::msg::Marker m = DefaultMarker(time, frame);
 
 
   if(val==-1){ //Red
@@ -382,7 +412,7 @@ visualization_msgs::MarkerArray Cells2Markers(std::vector<cell>& cells, const ro
     double d = cells[i].scale_;
     //Eigen::Vector2d end = u + 3*cells[i].snormal_;//*d;//+ cells[i].Affine3d*log(d/2);
     Eigen::Vector2d end = u + cells[i].snormal_*d;
-    geometry_msgs::Point p;
+    geometry_msgs::msg::Point p;
     p.x = u(0);
     p.y = u(1);
     p.z = 0;
@@ -423,39 +453,37 @@ double cell::GetAngle(){
   return alpha;
 }
 void MapPointNormal::PublishDataAssociationsMap(const std::string& topic, const std::vector<std::tuple<Eigen::Vector2d,Eigen::Vector2d,double,int> >& vis_residuals){
-  std::map<std::string, ros::Publisher>::iterator it = MapPointNormal::pubs.find(topic);
-  if (it == pubs.end()){
-    ros::NodeHandle nh("~");
-    pubs[topic] =  nh.advertise<visualization_msgs::MarkerArray>(topic,100);
-    it = MapPointNormal::pubs.find(topic);
-  }
-  visualization_msgs::Marker m; //= DefaultMarker(ros::Time::now(), frame_id);
-  m.action = visualization_msgs::Marker::DELETEALL;
-  visualization_msgs::MarkerArray marr_delete;
+  auto pub = GetMarkerPublisher(topic, MapPointNormal::pubs, MapPointNormal::GetNode());
+  if (!pub)
+    return;
+
+  visualization_msgs::msg::Marker m; //= DefaultMarker(node->now(), frame_id);
+  m.action = visualization_msgs::msg::Marker::DELETEALL;
+  visualization_msgs::msg::MarkerArray marr_delete;
   marr_delete.markers.push_back(m);
-  it->second.publish(marr_delete);
+  pub->publish(marr_delete);
 
 
-  visualization_msgs::MarkerArray marr;
+  visualization_msgs::msg::MarkerArray marr;
 
-  ros::Time t = ros::Time::now();
+  rclcpp::Time t = MapPointNormal::GetNode()->now();
 
-  visualization_msgs::Marker def_marker = DefaultMarker(t, "world");
+  visualization_msgs::msg::Marker def_marker = DefaultMarker(t, "world");
   def_marker.pose.orientation.w = 1.0;
   def_marker.scale.x = 0.1;
   def_marker.scale.y = 0.1;
   def_marker.scale.z = 0;
   def_marker.header.frame_id = "world";
 
-  def_marker.action = visualization_msgs::Marker::ADD;
+  def_marker.action = visualization_msgs::msg::Marker::ADD;
 
   def_marker.header.stamp = t;
-  def_marker.type = visualization_msgs::Marker::ARROW;
+  def_marker.type = visualization_msgs::msg::Marker::ARROW;
   def_marker.ns = "test";
   def_marker.id = 0;
 
 
-  std_msgs::ColorRGBA cfrom, cto, red, green, blue, color, black;
+  std_msgs::msg::ColorRGBA cfrom, cto, red, green, blue, color, black;
   red.r = 1;   red.g = 0,   red.b = 0;   red.a = 1;
   green.r = 0; green.g = 1; green.b = 0; green.a = 1;
   blue.r = 0;  blue.g = 0;  blue.b = 1;  red.a = 1;
@@ -475,7 +503,7 @@ void MapPointNormal::PublishDataAssociationsMap(const std::string& topic, const 
 
 
   for(auto && tuple : vis_residuals){
-    geometry_msgs::Point pfrom, pto;
+    geometry_msgs::msg::Point pfrom, pto;
     //cout<<"from: "<<std::get<0>(tuple)<<endl;
     //cout<<"from: "<<std::get<1>(tuple)<<endl;
     pfrom.x = std::get<0>(tuple).x();
@@ -509,31 +537,29 @@ void MapPointNormal::PublishDataAssociationsMap(const std::string& topic, const 
   }
 
 
-  it->second.publish(marr);
+  pub->publish(marr);
 
 }
 
 void MapPointNormal::PublishMap(const std::string& topic, MapNormalPtr map, Eigen::Affine3d& T, const std::string& frame_id, const int value, float alpha){
-  if(map==NULL)
+  if(!map)
     return;
 
-  std::map<std::string, ros::Publisher>::iterator it = MapPointNormal::pubs.find(topic);
-  if (it == pubs.end()){
-    ros::NodeHandle nh("~");
-    pubs[topic] =  nh.advertise<visualization_msgs::MarkerArray>(topic,100);
-    it = MapPointNormal::pubs.find(topic);
-  }
+  auto pub = GetMarkerPublisher(topic, MapPointNormal::pubs, MapPointNormal::node_);
+  if (!pub)
+    return;
+
   //cout<<"publish to "<<topic<<endl;
-  visualization_msgs::Marker m; //= DefaultMarker(ros::Time::now(), frame_id);
-  m.action = visualization_msgs::Marker::DELETEALL;
-  visualization_msgs::MarkerArray marr_delete;
+  visualization_msgs::msg::Marker m; //= DefaultMarker(node_->now(), frame_id);
+  m.action = visualization_msgs::msg::Marker::DELETEALL;
+  visualization_msgs::msg::MarkerArray marr_delete;
   marr_delete.markers.push_back(m);
-  it->second.publish(marr_delete);
+  pub->publish(marr_delete);
   std::vector<cell> cells = map->TransformCells(T);
 
-  visualization_msgs::MarkerArray marr = Cells2Markers(cells, ros::Time::now(), frame_id, value, alpha);
-  it->second.publish(marr);
-  visualization_msgs::MarkerArray marr_text(marr);
+  visualization_msgs::msg::MarkerArray marr = Cells2Markers(cells, node_->now(), frame_id, value, alpha);
+  pub->publish(marr);
+  visualization_msgs::msg::MarkerArray marr_text(marr);
   for(size_t i = 0; i<cells.size() ; i++){
     marr_text.markers[i].ns = "debug";
 
@@ -543,13 +569,13 @@ void MapPointNormal::PublishMap(const std::string& topic, MapNormalPtr map, Eige
     const std::string angle = std::to_string(map->GetCell(i).GetAngle());
 
     marr_text.markers[i].text = "n="+ n_pnts + "\ni=" + avg_i + "\np=" + planarity + "\na=" + angle;
-    marr_text.markers[i].type = visualization_msgs::Marker::TEXT_VIEW_FACING;
+    marr_text.markers[i].type = visualization_msgs::msg::Marker::TEXT_VIEW_FACING;
     marr_text.markers[i].pose.position.z = 2.0;
     marr_text.markers[i].scale.z = 0.2;
     marr_text.markers[i].pose.position.x = cells[i].u_(0);
     marr_text.markers[i].pose.position.y = cells[i].u_(1);
   }
-  it->second.publish(marr_text);
+  pub->publish(marr_text);
 
 }
 

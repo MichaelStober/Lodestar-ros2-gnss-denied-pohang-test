@@ -1,0 +1,53 @@
+# Parameters for an online (topic-driven) LodeStar odometry node.
+#
+# The offline bag reader in src/lodestar_odom.cpp is configured entirely
+# through boost::program_options and ignores this file; it exists for a future
+# online mode, where Parameters::GetParametersFromRos() reads these values.
+lodestar_odom_node:
+  ros__parameters:
+    # --- lodestar::Parameters ---
+    range_res: 0.05
+    z_min: 60.0
+    min_distance: 2.5
+    max_distance: 130.0
+    topic_filtered: "/marine/Filtered"
+    radar_frameid: "sensor_est"
+    dataset: "marine"
+    radar_topic_name: "/radar_image_inrange"
+    contour_threshold: 214
+    k_nearest: 20
+
+    # --- OdometryKeyframeFuser::Parameters ---
+    input_points_topic: "/marine/Filtered"
+    scan_registered_latest_topic: "radar_registered"
+    scan_registered_keyframe_topic: "radar_registered_keyframe"
+    odom_latest_topic: "radar_odom"
+    odom_keyframe_topic: "radar_odom_keyframe"
+    odometry_link_id: "world"
+    visualize: true
+    use_raw_pointcloud: false
+    submap_scan_size: 1
+    res: 3.0
+    downsample_factor: 1.0
+    registered_min_keyframe_dist: 1.5
+    min_keyframe_rot_deg_: 5.0
+    use_keyframe: true
+    use_guess: true
+    disable_registration: false
+    soft_constraint: false
+    compensate: false
+    cost_type: "P2P"
+    loss_type: "Huber"
+    loss_limit: 0.1
+    covar_scale: 1.0
+    regularization: 1.0
+    weight_intensity: true
+    publish_tf: true
+
+    # --- EvalTrajectory::Parameters ---
+    est_topic: "/lodestar_odom_node/radar_odom"
+    est_output_dir: ""
+    bag_name: ""
+    method: "lodestar"
+    save_pcd: false
+    synced_callback: true

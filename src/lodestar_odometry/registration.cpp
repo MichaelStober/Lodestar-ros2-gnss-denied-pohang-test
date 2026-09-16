@@ -1,10 +1,12 @@
 #include "lodestar_odometry/registration.h"
 namespace lodestar_odom {
 
-Registration::Registration():nh_("~"){
+Registration::Registration(rclcpp::Node::SharedPtr node) : node_(node) {
   this->options_.line_search_direction_type = ceres::LineSearchDirectionType::BFGS;
   this->problem_ = nullptr;
-  pub_association = nh_.advertise<visualization_msgs::MarkerArray>("associations",100);
+  if (node_)
+    pub_association = node_->create_publisher<visualization_msgs::msg::MarkerArray>(
+        PrivateTopic("associations"), rclcpp::QoS(100));
 }
 double Registration::getScore(){
   return score_;
@@ -73,6 +75,7 @@ double Registration::Weights::GetWeight(const weightoption opt){
   case weightoption::Combined_weights: return GetWeight(Sim_N) + GetWeight(Sim_direciton) + GetWeight(Sim_scale);
 
   }
+  return 1.0; // unreachable for valid enum values, silences -Wreturn-type
 }
 
 ceres::LossFunction* Registration::GetLoss(){
@@ -112,8 +115,8 @@ void normalizeEulerAngles(Eigen::Vector3d &euler) {
     euler[2] = angles::normalize_angle(euler[2]);
   }
 }
-inline geometry_msgs::Point Pntgeom(Eigen::Vector3d& u){
-  geometry_msgs::Point p;
+inline geometry_msgs::msg::Point Pntgeom(Eigen::Vector3d& u){
+  geometry_msgs::msg::Point p;
   p.x = u(0);
   p.y = u(1);
   p.z = u(2);

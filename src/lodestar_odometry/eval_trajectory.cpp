@@ -3,23 +3,28 @@
 namespace lodestar_odom {
 
 
-EvalTrajectory::EvalTrajectory(const EvalTrajectory::Parameters& pars, bool disable_callback) :par(pars), nh_("~"),downsampled(new pcl::PointCloud<pcl::PointXYZI>()){
+EvalTrajectory::EvalTrajectory(const EvalTrajectory::Parameters& pars, rclcpp::Node::SharedPtr node, bool disable_callback)
+  : par(pars), node_(node), downsampled(new pcl::PointCloud<pcl::PointXYZI>()){
 
   if(!disable_callback){
     assert(!par.odom_est_topic.empty());
     if(par.synced_callback){
-      //pose_sub_est  = new message_filters::Subscriber<nav_msgs::Odometry>(nh_, par.odom_est_topic, 100);
-      //rot_sub_est  = new message_filters::Subscriber<std_msgs::Float32>(nh_, "/rot_lodestar", 100);
-      //sync = new Synchronizer<double_odom>(double_odom(100), *rot_sub_est, *pose_sub_est);
-      //sync->registerCallback(boost::bind(&EvalTrajectory::CallbackSynchronized,this, _1, _2));
+      // The ROS 1 version used message_filters::Synchronizer here, but the
+      // registration was already commented out upstream, so there is nothing
+      // to port.
     }
     else{
-      sub_rot_est = nh_.subscribe("/rot_lodestar", 1000, &EvalTrajectory::CallbackRot, this);
-      sub_est = nh_.subscribe(par.odom_est_topic, 1000, &EvalTrajectory::CallbackEst, this);
+      sub_rot_est = node_->create_subscription<std_msgs::msg::Float32>(
+          PrivateTopic("/rot_lodestar"), rclcpp::QoS(1000),
+          std::bind(&EvalTrajectory::CallbackRot, this, std::placeholders::_1));
+      sub_est = node_->create_subscription<nav_msgs::msg::Odometry>(
+          PrivateTopic(par.odom_est_topic), rclcpp::QoS(1000),
+          std::bind(&EvalTrajectory::CallbackEst, this, std::placeholders::_1));
     }
   }
-  pub_est = nh_.advertise<nav_msgs::Path>("path_est", 10);
-  pub_cloud = nh_.advertise<pcl::PointCloud<pcl::PointXYZI>>("map_cloud", 10);
+  pub_est = node_->create_publisher<nav_msgs::msg::Path>(PrivateTopic("path_est"), rclcpp::QoS(10));
+  pub_cloud = node_->create_publisher<sensor_msgs::msg::PointCloud2>(PrivateTopic("map_cloud"), rclcpp::QoS(10));
+  br = std::make_unique<tf2_ros::TransformBroadcaster>(node_);
 
 }
 
@@ -32,16 +37,16 @@ void EvalTrajectory::CallbackESTEigen(const poseStamped& Test, const pcl::PointC
   CallbackESTEigen(Test);
 }
 
-void EvalTrajectory::CallbackEst(const nav_msgs::Odometry::ConstPtr &msg){
+void EvalTrajectory::CallbackEst(const nav_msgs::msg::Odometry::ConstSharedPtr &msg){
   Eigen::Affine3d T;
-  tf::poseMsgToEigen(msg->pose.pose, T);
+  tf2::fromMsg(msg->pose.pose, T);
   //T = T*rot_vek;
-  ros::Time t = msg->header.stamp;
+  rclcpp::Time t(msg->header.stamp);
   est_vek.push_back(std::make_pair(T, t));
   //est_mat = T;
 }
 
-void EvalTrajectory::CallbackRot(const std_msgs::Float32::ConstPtr &msg){
+void EvalTrajectory::CallbackRot(const std_msgs::msg::Float32::ConstSharedPtr &msg){
   //rot_vek.push_back(msg_rot->data);
   cout << "callback" << endl;
   Eigen::Matrix3d rotationMatrix;
@@ -51,7 +56,7 @@ void EvalTrajectory::CallbackRot(const std_msgs::Float32::ConstPtr &msg){
     // Now convert it into an Affine3d transformation.
     Eigen::Affine3d transform = Eigen::Affine3d::Identity();
     transform.rotate(rotationMatrix);
-    ros::Time t = ros::Time::now();
+    rclcpp::Time t = node_->now();
   rot_vek.push_back(std::make_pair(transform, t));
   //rot_mat = transform;
 }
@@ -82,19 +87,18 @@ std::string EvalTrajectory::DatasetToSequence(const std::string& dataset){
   return "01.txt";
 }
 
-void EvalTrajectory::PublishTrajectory(poseStampedVector& vek, ros::Publisher& pub){
-  nav_msgs::Path path;
+void EvalTrajectory::PublishTrajectory(poseStampedVector& vek, rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr pub){
+  nav_msgs::msg::Path path;
   path.header.frame_id="world";
-  path.header.stamp = ros::Time::now();
+  path.header.stamp = node_->now();
 
-  std::vector<tf::StampedTransform> trans_vek;
-  for (int i=0;i<vek.size();i++) {
+  for (size_t i=0;i<vek.size();i++) {
     Eigen::Affine3d T = vek[i].first;
-    geometry_msgs::PoseStamped Tstamped;
-    tf::poseEigenToMsg(T,Tstamped.pose);
+    geometry_msgs::msg::PoseStamped Tstamped;
+    Tstamped.pose = tf2::toMsg(T);
     path.poses.push_back(Tstamped);
   }
-  pub.publish(path);
+  pub->publish(path);
 }
 
 void EvalTrajectory::SavePCD(const std::string& folder){
@@ -113,7 +117,7 @@ void EvalTrajectory::Save(){
     exit(0);
   }
   else{
-    boost::filesystem::create_directories(par.est_output_dir);
+    std::filesystem::create_directories(par.est_output_dir);
     std::string est_path = par.est_output_dir+DatasetToSequence(par.sequence);
     cout<<"Saving estimated "<<est_vek.size()<<" poses"<<endl;
     cout<<"To path: "<<est_path<<endl;

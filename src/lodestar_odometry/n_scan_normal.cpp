@@ -1,7 +1,7 @@
 #include "lodestar_odometry/n_scan_normal.h"
 namespace lodestar_odom {
 
-n_scan_normal_reg::n_scan_normal_reg(){
+n_scan_normal_reg::n_scan_normal_reg(rclcpp::Node::SharedPtr node) : Registration(node){
   this->problem_ = nullptr;
   this->options_.max_num_iterations = 20;
 
@@ -11,7 +11,7 @@ n_scan_normal_reg::n_scan_normal_reg(){
 
 }
 
-n_scan_normal_reg::n_scan_normal_reg(const cost_metric &cost,loss_type loss, double loss_limit, const weightoption opt) : n_scan_normal_reg()
+n_scan_normal_reg::n_scan_normal_reg(const cost_metric &cost,loss_type loss, double loss_limit, const weightoption opt, rclcpp::Node::SharedPtr node) : n_scan_normal_reg(node)
 {
   cost_ = cost;
   loss_ = loss;
@@ -227,7 +227,7 @@ bool n_scan_normal_reg:: BuildOptimizationProblem(std::vector<MapNormalPtr>& sca
 
 
   std::vector<Eigen::Affine2d> Tvek(scans.size());
-  problem_ = boost::shared_ptr<ceres::Problem>(new ceres::Problem());
+  problem_ = std::make_shared<ceres::Problem>();
   for(size_t i=0 ; i<scans.size() ; i++){ // project scans [targets] into world frame using transformation parameters, src is always given in the local reference frame.
     problem_->AddParameterBlock(parameters[i].data(), 3);
     Eigen::Affine3d T = vectorToAffine3d(parameters[i]);
@@ -235,7 +235,6 @@ bool n_scan_normal_reg:: BuildOptimizationProblem(std::vector<MapNormalPtr>& sca
   }
   CHECK(problem_ != nullptr);
 
-  //  ros::Time t3 = ros::Time::now();
   for(size_t i=0 ; i<scans.size() ; i++)
     for(size_t j=0 ; j<scans.size() ; j++)
       if( !(fixedBlock_[j] && fixedBlock_[i]) && i!=j){ // if not both fixed, and i!=j

@@ -1,65 +1,140 @@
-cmake_minimum_required(VERSION 2.8.3)
+cmake_minimum_required(VERSION 3.16)
 project(lodestar_odometry)
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++14")
-set(CMAKE_BUILD_TYPE release)
 
-find_package(PCL  REQUIRED)
-set(_include_dirs "include;/usr/include;/usr/include/opencv4")
+# ---------------------------------------------------------------- compiler ---
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
 
-find_package(catkin REQUIRED COMPONENTS
-    geometry_msgs
-    laser_geometry
-    eigen_conversions
-    pcl_ros
-    roscpp
-    rospy
-    sensor_msgs
-    std_msgs
-    tf
-    genmsg
-    tf_conversions
-    cv_bridge
-    image_transport
-    )
- find_package(OpenCV 4)
-find_package(OpenMP REQUIRED)
-if(OPENMP_FOUND)
- set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS} -O3 ")
- set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS} -O3")
- set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${OpenMP_EXE_LINKER_FLAGS}")
+if(NOT CMAKE_BUILD_TYPE)
+  set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
 endif()
 
-find_package(Ceres REQUIRED)
-find_package(PCL 1.7 REQUIRED)
-find_package(PCL REQUIRED)
-add_definitions(${PCL_DEFINITIONS})
+add_compile_options(-Wall -Wextra -Wno-unused-parameter -Wno-sign-compare)
+
+# ------------------------------------------------------------- ROS 2 deps ---
+find_package(ament_cmake REQUIRED)
+find_package(rclcpp REQUIRED)
+find_package(rosbag2_cpp REQUIRED)
+find_package(rosbag2_storage REQUIRED)
+find_package(sensor_msgs REQUIRED)
+find_package(nav_msgs REQUIRED)
+find_package(geometry_msgs REQUIRED)
+find_package(std_msgs REQUIRED)
+find_package(visualization_msgs REQUIRED)
+find_package(tf2 REQUIRED)
+find_package(tf2_ros REQUIRED)
+find_package(tf2_eigen REQUIRED)
+find_package(tf2_geometry_msgs REQUIRED)
+find_package(cv_bridge REQUIRED)
+find_package(pcl_conversions REQUIRED)
+find_package(angles REQUIRED)
+
+# ------------------------------------------------------- system libraries ---
+find_package(PCL 1.12 REQUIRED COMPONENTS common io filters kdtree search)
+find_package(OpenCV 4 REQUIRED)
+find_package(Ceres 2.0 REQUIRED)
 find_package(Eigen3 REQUIRED NO_MODULE)
+find_package(Boost REQUIRED COMPONENTS program_options)
+find_package(OpenMP REQUIRED)
 
+add_definitions(${PCL_DEFINITIONS})
 
-catkin_package(
-    INCLUDE_DIRS include
-    DEPENDS Eigen3 
-    CATKIN_DEPENDS roscpp laser_geometry sensor_msgs tf_conversions tf geometry_msgs
-    LIBRARIES ${PROJECT_NAME}
-    )
+set(ROS_DEPS
+  rclcpp
+  rosbag2_cpp
+  rosbag2_storage
+  sensor_msgs
+  nav_msgs
+  geometry_msgs
+  std_msgs
+  visualization_msgs
+  tf2
+  tf2_ros
+  tf2_eigen
+  tf2_geometry_msgs
+  cv_bridge
+  pcl_conversions
+  angles
+)
 
+# ---------------------------------------------------------------- library ---
+set(${PROJECT_NAME}_LIB_SRCS
+  src/${PROJECT_NAME}/utils.cpp
+  src/${PROJECT_NAME}/pointnormal.cpp
+  src/${PROJECT_NAME}/registration.cpp
+  src/${PROJECT_NAME}/n_scan_normal.cpp
+  src/${PROJECT_NAME}/odometrykeyframefuser.cpp
+  src/${PROJECT_NAME}/eval_trajectory.cpp
+  src/${PROJECT_NAME}/statistics.cpp
+  src/${PROJECT_NAME}/lodestar.cpp
+)
 
+add_library(${PROJECT_NAME} SHARED ${${PROJECT_NAME}_LIB_SRCS})
 
-include_directories(include ${catkin_INCLUDE_DIRS} ${Boost_INCLUDE_DIRS}  ${PCL_INCLUDE_DIRS} ${CERES_INCLUDE_DIRS})
+target_include_directories(${PROJECT_NAME} PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
+)
+target_include_directories(${PROJECT_NAME} SYSTEM PUBLIC
+  ${PCL_INCLUDE_DIRS}
+  ${OpenCV_INCLUDE_DIRS}
+  ${CERES_INCLUDE_DIRS}
+)
+target_link_directories(${PROJECT_NAME} PUBLIC ${PCL_LIBRARY_DIRS})
 
- set (${PROJECT_NAME}_LIB_SRCS
-   src/${PROJECT_NAME}/utils.cpp
-   src/${PROJECT_NAME}/pointnormal.cpp
-   src/${PROJECT_NAME}/registration.cpp
-   src/${PROJECT_NAME}/n_scan_normal.cpp
-   src/${PROJECT_NAME}/odometrykeyframefuser.cpp
-   src/${PROJECT_NAME}/eval_trajectory.cpp
-   src/${PROJECT_NAME}/statistics.cpp
-   src/${PROJECT_NAME}/lodestar.cpp
- )
+ament_target_dependencies(${PROJECT_NAME} ${ROS_DEPS})
 
-add_library(${PROJECT_NAME} ${${PROJECT_NAME}_LIB_SRCS})
-target_link_libraries(${PROJECT_NAME} ${catkin_LIBRARIES}  ${CERES_LIBRARIES})
+target_link_libraries(${PROJECT_NAME}
+  ${PCL_LIBRARIES}
+  ${OpenCV_LIBS}
+  ${CERES_LIBRARIES}
+  Eigen3::Eigen
+  OpenMP::OpenMP_CXX
+)
 
+# ------------------------------------------------------------- executable ---
 add_executable(lodestar_odom src/lodestar_odom.cpp)
-target_link_libraries(lodestar_odom ${catkin_LIBRARIES} ${Boost_LIBRARIES} ${PROJECT_NAME})
+ament_target_dependencies(lodestar_odom ${ROS_DEPS})
+target_link_libraries(lodestar_odom
+  ${PROJECT_NAME}
+  Boost::program_options
+)
+
+# ----------------------------------------------------------------- install ---
+install(
+  TARGETS ${PROJECT_NAME}
+  EXPORT export_${PROJECT_NAME}
+  ARCHIVE DESTINATION lib
+  LIBRARY DESTINATION lib
+  RUNTIME DESTINATION bin
+)
+
+install(
+  TARGETS lodestar_odom
+  DESTINATION lib/${PROJECT_NAME}
+)
+
+install(
+  DIRECTORY include/
+  DESTINATION include
+)
+
+install(
+  DIRECTORY launch rviz config
+  DESTINATION share/${PROJECT_NAME}
+)
+
+install(
+  PROGRAMS
+    scripts/run_lodestar_odom.sh
+    scripts/check_trajectory.py
+  DESTINATION lib/${PROJECT_NAME}
+)
+
+ament_export_include_directories(include)
+ament_export_libraries(${PROJECT_NAME})
+ament_export_targets(export_${PROJECT_NAME} HAS_LIBRARY_TARGET)
+ament_export_dependencies(${ROS_DEPS} PCL OpenCV Ceres Eigen3)
+
+ament_package()

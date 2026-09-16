@@ -1,75 +1,60 @@
 #pragma once
-#include <ros/ros.h>
-#include "lodestar_odometry/lodestar.h"
-
-#include <Eigen/Eigen>
-#include "eigen_conversions/eigen_msg.h"
-#include <tf_conversions/tf_eigen.h>
-
-
-#include "sensor_msgs/PointCloud2.h"
-#include "pcl/io/pcd_io.h"
-
-#include <fstream>
-#include "message_filters/subscriber.h"
-#include "tf/message_filter.h"
-#include <tf/transform_listener.h>
-
-#include <boost/circular_buffer.hpp>
-#include <laser_geometry/laser_geometry.h>
-#include <nav_msgs/Odometry.h>
-#include <geometry_msgs/PoseStamped.h>
-
-#include <visualization_msgs/MarkerArray.h>
-#include "pcl_conversions/pcl_conversions.h"
-#include "pcl_ros/point_cloud.h"
 
 #include <time.h>
+
+#include <chrono>
 #include <cstdio>
+#include <fstream>
+#include <memory>
+#include <string>
+#include <vector>
 
-#include <pcl_ros/transforms.h>
-#include "pcl_ros/publisher.h"
+#include <Eigen/Eigen>
 
-//s#include "fuzzy_msgs/Registration.h"
-#include <geometry_msgs/Transform.h>
+#include <boost/circular_buffer.hpp>
+
+#include <pcl/common/transforms.h>
+#include <pcl/io/pcd_io.h>
+#include <pcl_conversions/pcl_conversions.h>
+
+#include <rclcpp/rclcpp.hpp>
+#include <geometry_msgs/msg/pose_stamped.hpp>
+#include <geometry_msgs/msg/transform.hpp>
+#include <geometry_msgs/msg/transform_stamped.hpp>
+#include <nav_msgs/msg/odometry.hpp>
+#include <sensor_msgs/msg/point_cloud2.hpp>
+#include <std_msgs/msg/color_rgba.hpp>
+#include <std_msgs/msg/header.hpp>
+#include <tf2_eigen/tf2_eigen.hpp>
+#include <tf2_ros/transform_broadcaster.h>
+#include <visualization_msgs/msg/marker.hpp>
+#include <visualization_msgs/msg/marker_array.hpp>
+
+#include "lodestar_odometry/lodestar.h"
+#include "lodestar_odometry/n_scan_normal.h"
+#include "lodestar_odometry/pointnormal.h"
+#include "lodestar_odometry/statistics.h"
 #include "lodestar_odometry/utils.h"
 
-#include "lodestar_odometry/pointnormal.h"
-#include "tf/transform_broadcaster.h"
-#include "std_msgs/Header.h"
-#include "std_msgs/Time.h"
-#include "lodestar_odometry/n_scan_normal.h"
-#include "lodestar_odometry/statistics.h"
-#include "std_msgs/ColorRGBA.h"
-#include "boost/shared_ptr.hpp"
-
-using std::string;
-using std::cout;
 using std::cerr;
+using std::cout;
 using std::endl;
-
-
-
+using std::string;
 
 namespace lodestar_odom {
 
+visualization_msgs::msg::Marker GetDefault();
 
-visualization_msgs::Marker GetDefault();
-
-typedef std::vector<std::pair< Eigen::Affine3d, MapNormalPtr> > PoseScanVector;
+typedef std::vector<std::pair<Eigen::Affine3d, MapNormalPtr> > PoseScanVector;
 
 class OdometryKeyframeFuser {
-
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW;
 
-public:
+ public:
   class Parameters {
-
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW;
 
-  public:
-
-
+   public:
     Parameters() {}
     std::string scan_registered_latest_topic = "radar_registered";
     std::string scan_registered_keyframe_topic = "radar_registered_keyframe";
@@ -79,7 +64,6 @@ public:
     std::string input_points_topic = "/marine/Filtered";
     std::string cost_type = "P2L";
     weightoption weight_opt = weightoption::Uniform;
-
 
     bool visualize = true;
     int submap_scan_size = 3;
@@ -97,132 +81,132 @@ public:
 
     bool publish_tf_ = true;
 
-    void GetParametersFromRos( ros::NodeHandle& param_nh){
-      param_nh.param<std::string>("input_points_topic", input_points_topic, "/marine/Filtered");
-      param_nh.param<std::string>("scan_registered_latest_topic", scan_registered_latest_topic, "/radar_registered");
-      param_nh.param<std::string>("scan_registered_keyframe_topic", scan_registered_keyframe_topic, "/radar_registered_keyframe");
-      param_nh.param<std::string>("odom_latest_topic", odom_latest_topic, "/radar_odom");
-      param_nh.param<std::string>("odom_keyframe_topic", odom_keyframe_topic, "/radar_odom_keyframe");
+    void GetParametersFromRos(rclcpp::Node& n) {
+      input_points_topic = n.declare_parameter<std::string>("input_points_topic", "/marine/Filtered");
+      scan_registered_latest_topic =
+          n.declare_parameter<std::string>("scan_registered_latest_topic", "radar_registered");
+      scan_registered_keyframe_topic = n.declare_parameter<std::string>(
+          "scan_registered_keyframe_topic", "radar_registered_keyframe");
+      odom_latest_topic = n.declare_parameter<std::string>("odom_latest_topic", "radar_odom");
+      odom_keyframe_topic =
+          n.declare_parameter<std::string>("odom_keyframe_topic", "radar_odom_keyframe");
 
+      odometry_link_id = n.declare_parameter<std::string>("odometry_link_id", "world");
+      visualize = n.declare_parameter<bool>("visualize", true);
 
-      param_nh.param<std::string>("odometry_link_id", odometry_link_id, "world");
-      param_nh.param("visualize", visualize, true);
+      use_raw_pointcloud = n.declare_parameter<bool>("use_raw_pointcloud", false);
+      submap_scan_size = n.declare_parameter<int>("submap_scan_size", 3);
 
-      param_nh.param<bool>("use_raw_pointcloud", use_raw_pointcloud, false);
-      param_nh.param<int>("submap_scan_size", submap_scan_size, 3);
+      res = n.declare_parameter<double>("res", 3.0);
+      MapPointNormal::downsample_factor = n.declare_parameter<double>("downsample_factor", 1.0);
 
-      param_nh.param<double>("res", res, 3.0);
-      double d_factor;
-      param_nh.param<double>("downsample_factor", d_factor, 1);
-      MapPointNormal::downsample_factor = d_factor;
+      min_keyframe_dist_ = n.declare_parameter<double>("registered_min_keyframe_dist", 1.5);
+      min_keyframe_rot_deg_ = n.declare_parameter<double>("min_keyframe_rot_deg_", 5.0);
+      use_keyframe = n.declare_parameter<bool>("use_keyframe", true);
+      use_guess = n.declare_parameter<bool>("use_guess", true);
+      disable_registration = n.declare_parameter<bool>("disable_registration", false);
+      soft_constraint = n.declare_parameter<bool>("soft_constraint", false);
+      compensate = n.declare_parameter<bool>("compensate", true);
+      cost_type = n.declare_parameter<std::string>("cost_type", "P2L");
 
-      param_nh.param<double>("registered_min_keyframe_dist", min_keyframe_dist_, 1.5);
-      param_nh.param<double>("min_keyframe_rot_deg_", min_keyframe_rot_deg_, 5);
-      param_nh.param<bool>("use_keyframe", use_keyframe, true);
-      param_nh.param<bool>("use_guess", use_guess, true);
-      param_nh.param<bool>("disable_registration", disable_registration, false);
-      param_nh.param<bool>("soft_constraint", soft_constraint, false);
-      param_nh.param<bool>("compensate", compensate, true);
-      param_nh.param<std::string>("cost_type", cost_type, "P2L");
-
-
-      param_nh.param<std::string>("loss_type", loss_type_, "Huber");
-      param_nh.param<double>("loss_limit", loss_limit_, 0.1);
-      param_nh.param<double>("covar_scale", covar_scale_, 1);
-      param_nh.param<double>("regularization", regularization_, 0);
-      param_nh.param<bool>("weight_intensity", weight_intensity_, false);
-      param_nh.param<bool>("publish_tf", publish_tf_, false);
+      loss_type_ = n.declare_parameter<std::string>("loss_type", "Huber");
+      loss_limit_ = n.declare_parameter<double>("loss_limit", 0.1);
+      covar_scale_ = n.declare_parameter<double>("covar_scale", 1.0);
+      regularization_ = n.declare_parameter<double>("regularization", 0.0);
+      weight_intensity_ = n.declare_parameter<bool>("weight_intensity", false);
+      publish_tf_ = n.declare_parameter<bool>("publish_tf", false);
     }
 
-    std::string ToString(){
+    std::string ToString() {
       std::ostringstream stringStream;
-      //stringStream << "OdometryKeyframeFuser::Parameters"<<endl;
-      stringStream << "input_points_topic, "<<input_points_topic<<endl;
-      stringStream << "scan_registered_latest_topic, "<<scan_registered_latest_topic<<endl;
-      stringStream << "scan_registered_keyframe_topic, "<<scan_registered_keyframe_topic<<endl;
-      stringStream << "odom_latest_topic, "<<odom_latest_topic<<endl;
-      stringStream << "odom_keyframe_topic, "<<odom_keyframe_topic<<endl;
-      stringStream << "use raw pointcloud, "<<std::boolalpha<<use_raw_pointcloud<<endl;
-      stringStream << "submap keyframes, "<<submap_scan_size<<endl;
-      stringStream << "resolution r,"<<res<<endl;
-      stringStream << "resample factor f, "<<MapPointNormal::downsample_factor<<endl;
-      stringStream << "min. sensor distance [m], "<<min_keyframe_dist_<<endl;
-      stringStream << "min. sensor rot. [deg], "<<min_keyframe_rot_deg_<<endl;
-      stringStream << "use keyframe, "<<std::boolalpha<<use_keyframe<<endl;
-      stringStream << "use initial guess, "<<std::boolalpha<<use_guess<<endl;
-      stringStream << "disable registration, "<<std::boolalpha<<disable_registration<<endl;
-      stringStream << "soft velocity constraint, "<<std::boolalpha<<soft_constraint<<endl;
-      stringStream << "compensate, "<<std::boolalpha<<compensate<<endl;
-      stringStream << "cost type, "<<cost_type<<endl;
-      stringStream << "loss type, "<<loss_type_<<endl;
-      stringStream << "loss limit, "<<std::to_string(loss_limit_)<<endl;
-      stringStream << "covar scale, "<<std::to_string(covar_scale_)<<endl;
-      stringStream << "regularization, "<<std::to_string(regularization_)<<endl;
-      stringStream << "weight intensity, "<<std::boolalpha<<weight_intensity_<<endl;
-      stringStream << "publish_tf, "<<std::boolalpha<<publish_tf_<<endl;
-      stringStream << "Weight, "<<weight_opt<<endl;
+      stringStream << "input_points_topic, " << input_points_topic << endl;
+      stringStream << "scan_registered_latest_topic, " << scan_registered_latest_topic << endl;
+      stringStream << "scan_registered_keyframe_topic, " << scan_registered_keyframe_topic << endl;
+      stringStream << "odom_latest_topic, " << odom_latest_topic << endl;
+      stringStream << "odom_keyframe_topic, " << odom_keyframe_topic << endl;
+      stringStream << "use raw pointcloud, " << std::boolalpha << use_raw_pointcloud << endl;
+      stringStream << "submap keyframes, " << submap_scan_size << endl;
+      stringStream << "resolution r," << res << endl;
+      stringStream << "resample factor f, " << MapPointNormal::downsample_factor << endl;
+      stringStream << "min. sensor distance [m], " << min_keyframe_dist_ << endl;
+      stringStream << "min. sensor rot. [deg], " << min_keyframe_rot_deg_ << endl;
+      stringStream << "use keyframe, " << std::boolalpha << use_keyframe << endl;
+      stringStream << "use initial guess, " << std::boolalpha << use_guess << endl;
+      stringStream << "disable registration, " << std::boolalpha << disable_registration << endl;
+      stringStream << "soft velocity constraint, " << std::boolalpha << soft_constraint << endl;
+      stringStream << "compensate, " << std::boolalpha << compensate << endl;
+      stringStream << "cost type, " << cost_type << endl;
+      stringStream << "loss type, " << loss_type_ << endl;
+      stringStream << "loss limit, " << std::to_string(loss_limit_) << endl;
+      stringStream << "covar scale, " << std::to_string(covar_scale_) << endl;
+      stringStream << "regularization, " << std::to_string(regularization_) << endl;
+      stringStream << "weight intensity, " << std::boolalpha << weight_intensity_ << endl;
+      stringStream << "publish_tf, " << std::boolalpha << publish_tf_ << endl;
+      stringStream << "Weight, " << weight_opt << endl;
       return stringStream.str();
     }
   };
 
-
-protected:
+ protected:
   Eigen::Affine3d Tcurrent, Tprev_fused, T_prev, Tmot;
   // Components for publishing
-  boost::shared_ptr<n_scan_normal_reg> radar_reg = NULL;
+  std::shared_ptr<n_scan_normal_reg> radar_reg = nullptr;
   PoseScanVector keyframes_;
 
   unsigned int frame_nr_ = 0, nr_callbacks_ = 0;
   double distance_traveled = 0.0;
-  const double Tsensor = 1.0/4.0;
-
+  const double Tsensor = 1.0 / 4.0;
 
   Parameters par;
-  ros::NodeHandle nh_;
-  ros::Subscriber pointcloud_callback, sub_rot_est;
-  ros::Publisher pose_current_publisher, pose_keyframe_publisher, pubsrc_cloud_latest, pub_cloud_keyframe;;
-  tf::TransformBroadcaster Tbr;
 
+  rclcpp::Node::SharedPtr node_;
+  rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr pointcloud_callback;
+  rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr sub_rot_est;
+  rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr pose_current_publisher;
+  rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr pose_keyframe_publisher;
+  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pubsrc_cloud_latest;
+  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pub_cloud_keyframe;
+  std::unique_ptr<tf2_ros::TransformBroadcaster> Tbr;
 
-public:
+ public:
+  OdometryKeyframeFuser(const Parameters& pars, rclcpp::Node::SharedPtr node,
+                        bool disable_callback = false);
 
-  OdometryKeyframeFuser(const Parameters& pars, bool disable_callback = false);
+  void pointcloudCallback(const pcl::PointCloud<pcl::PointXYZI>::Ptr& msg_in,
+                          Eigen::Affine3d& Tcurr);
+  void pointcloudCallback(const pcl::PointCloud<pcl::PointXYZI>::Ptr& msg_in, Eigen::Affine3d& Tcurr,
+                          Eigen::Affine3d& Trot);
+  void CallbackRot(const nav_msgs::msg::Odometry::ConstSharedPtr& msg);
+  std::string GetStatus() {
+    return "Distance traveled: " + std::to_string(distance_traveled) +
+           ", nr sensor readings: " + std::to_string(frame_nr_);
+  }
 
-  //~OdometryKeyframeFuser();
+ private:
+  bool AccelerationVelocitySanityCheck(const Eigen::Affine3d& Tmot_prev,
+                                       const Eigen::Affine3d& Tmot_curr);
 
-  void pointcloudCallback(const pcl::PointCloud<pcl::PointXYZI>::Ptr& msg_in, Eigen::Affine3d& Tcurr);
-  void pointcloudCallback(const pcl::PointCloud<pcl::PointXYZI>::Ptr& msg_in, Eigen::Affine3d& Tcurr, Eigen::Affine3d& Trot);
-  void CallbackRot(const nav_msgs::Odometry::ConstPtr &msg);
-  std::string GetStatus(){return "Distance traveled: "+std::to_string(distance_traveled)+", nr sensor readings: "+std::to_string(frame_nr_);}
-
-private: 
-
-  bool AccelerationVelocitySanityCheck(const Eigen::Affine3d& Tmot_prev, const Eigen::Affine3d& Tmot_curr);
-
-  bool KeyFrameBasedFuse(const Eigen::Affine3d& diff, bool use_keyframe, double min_keyframe_dist, double min_keyframe_rot_deg);
+  bool KeyFrameBasedFuse(const Eigen::Affine3d& diff, bool use_keyframe, double min_keyframe_dist,
+                         double min_keyframe_rot_deg);
 
   pcl::PointXYZI Transform(const Eigen::Affine3d& T, pcl::PointXYZI& p);
 
-  nav_msgs::Odometry FormatOdomMsg(const Eigen::Affine3d& T, const Eigen::Affine3d& Tmot, const ros::Time& t, Matrix6d &Cov);
+  nav_msgs::msg::Odometry FormatOdomMsg(const Eigen::Affine3d& T, const Eigen::Affine3d& Tmot,
+                                        const rclcpp::Time& t, Matrix6d& Cov);
 
-  pcl::PointCloud<pcl::PointXYZI> FormatScanMsg(pcl::PointCloud<pcl::PointXYZI>& cloud_in, Eigen::Affine3d& T);
-
+  pcl::PointCloud<pcl::PointXYZI> FormatScanMsg(pcl::PointCloud<pcl::PointXYZI>& cloud_in,
+                                                Eigen::Affine3d& T);
 
   void processFrame(pcl::PointCloud<pcl::PointXYZI>::Ptr& cloud, Eigen::Affine3d& Trot);
 
-  void pointcloudCallback(const sensor_msgs::PointCloud2::ConstPtr& msg_in);
-  
-
+  void pointcloudCallback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr& msg_in);
 };
 
-void AddToReference(PoseScanVector& reference, MapNormalPtr cloud,  const Eigen::Affine3d& T,  size_t submap_scan_size);
+void AddToReference(PoseScanVector& reference, MapNormalPtr cloud, const Eigen::Affine3d& T,
+                    size_t submap_scan_size);
 
-void FormatScans(const PoseScanVector& reference,
-                   const MapNormalPtr& Pcurrent,
-                   const Eigen::Affine3d& Tcurrent,
-                   std::vector<Matrix6d>& cov_vek,
-                   std::vector<MapNormalPtr>& scans_vek,
-                   std::vector<Eigen::Affine3d>& T_vek
-                   );
+void FormatScans(const PoseScanVector& reference, const MapNormalPtr& Pcurrent,
+                 const Eigen::Affine3d& Tcurrent, std::vector<Matrix6d>& cov_vek,
+                 std::vector<MapNormalPtr>& scans_vek, std::vector<Eigen::Affine3d>& T_vek);
 
-}
+}  // namespace lodestar_odom

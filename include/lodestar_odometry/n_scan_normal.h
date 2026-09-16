@@ -1,25 +1,34 @@
-﻿#pragma once
-#include "pcl/io/pcd_io.h"
-#include "pcl_ros/point_cloud.h"
-#include "pcl_ros/publisher.h"
-#include "sensor_msgs/PointCloud2.h"
+#pragma once
+
 #include <time.h>
-#include <fstream>
-#include <cstdio>
-#include <ros/ros.h>
-#include <pcl_conversions/pcl_conversions.h>
-#include "pcl/point_cloud.h"
-#include <Eigen/Eigen>
-#include "tuple"
-#include "list"
-#include "pcl/kdtree/kdtree_flann.h"
-#include "pcl/filters/voxel_grid.h"
-#include "pcl/common/centroid.h"
-#include "pcl/point_types.h"
-#include "lodestar_odometry/registration.h"
-#include "ceres/loss_function.h"
+
 #include <algorithm>
+#include <cfloat>
+#include <cstdio>
+#include <unordered_map>
+#include <fstream>
+#include <list>
+#include <memory>
+#include <tuple>
+#include <vector>
+
+#include <Eigen/Eigen>
+
+#include <pcl/common/centroid.h>
+#include <pcl/filters/voxel_grid.h>
+#include <pcl/io/pcd_io.h>
+#include <pcl/kdtree/kdtree_flann.h>
+#include <pcl/point_cloud.h>
+#include <pcl/point_types.h>
+#include <pcl_conversions/pcl_conversions.h>
+
+#include <rclcpp/rclcpp.hpp>
+#include <sensor_msgs/msg/point_cloud2.hpp>
+
+#include "ceres/loss_function.h"
 #include "ceres/normal_prior.h"
+
+#include "lodestar_odometry/registration.h"
 
 namespace lodestar_odom{
 
@@ -30,9 +39,11 @@ public:
 
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 
-  n_scan_normal_reg();
+  explicit n_scan_normal_reg(rclcpp::Node::SharedPtr node = nullptr);
 
-  n_scan_normal_reg(const cost_metric& cost, loss_type loss = Huber, double loss_limit = 0.1, const weightoption opt = weightoption::Uniform);
+  n_scan_normal_reg(const cost_metric& cost, loss_type loss = Huber, double loss_limit = 0.1,
+                    const weightoption opt = weightoption::Uniform,
+                    rclcpp::Node::SharedPtr node = nullptr);
 
   bool Register(std::vector<MapNormalPtr>& scans, std::vector<Eigen::Affine3d>& Tsrc, std::vector<Matrix6d>& reg_cov, bool soft_constraints = false);
 

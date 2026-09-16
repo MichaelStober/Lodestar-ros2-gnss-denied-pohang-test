@@ -1,29 +1,30 @@
 #include "lodestar_odometry/odometrykeyframefuser.h"
 namespace lodestar_odom {
 
-visualization_msgs::Marker GetDefault(){
-  visualization_msgs::Marker m;
+visualization_msgs::msg::Marker GetDefault(){
+  visualization_msgs::msg::Marker m;
   m.color.r = 0;
   m.color.g = 0;
   m.color.b = 1;
   m.color.a = 1;
-  m.type = visualization_msgs::Marker::LINE_LIST;
+  m.type = visualization_msgs::msg::Marker::LINE_LIST;
   m.id = 0;
   m.scale.x = 0.1;
-  m.action = visualization_msgs::Marker::ADD;
-  m.lifetime = ros::Duration(0);
+  m.action = visualization_msgs::msg::Marker::ADD;
+  m.lifetime = rclcpp::Duration(0, 0);
   m.header.frame_id ="world";
-  m.header.stamp = ros::Time::now();
+  m.header.stamp = rclcpp::Time(0, 0, RCL_ROS_TIME);
   return m;
 }
 
-OdometryKeyframeFuser::OdometryKeyframeFuser(const Parameters& pars, bool disable_callback) : par(pars), nh_("~"){
+OdometryKeyframeFuser::OdometryKeyframeFuser(const Parameters& pars, rclcpp::Node::SharedPtr node, bool disable_callback) : par(pars), node_(node){
   assert (!par.input_points_topic.empty() && !par.scan_registered_latest_topic.empty() && !par.scan_registered_keyframe_topic.empty() && !par.odom_latest_topic.empty() && !par.odom_keyframe_topic.empty() );
   assert(par.res>0.05 && par.submap_scan_size>=1 );
-  radar_reg = boost::shared_ptr<lodestar_odom::n_scan_normal_reg>(new n_scan_normal_reg(Str2Cost(par.cost_type),
-                                                                                              Str2loss(par.loss_type_),
-                                                                                              par.loss_limit_,
-                                                                                              par.weight_opt));
+  radar_reg = std::make_shared<lodestar_odom::n_scan_normal_reg>(Str2Cost(par.cost_type),
+                                                                 Str2loss(par.loss_type_),
+                                                                 par.loss_limit_,
+                                                                 par.weight_opt,
+                                                                 node_);
 
   radar_reg->SetD2dPar(par.covar_scale_,par.regularization_);
 
@@ -32,17 +33,22 @@ OdometryKeyframeFuser::OdometryKeyframeFuser(const Parameters& pars, bool disabl
   T_prev = Eigen::Affine3d::Identity();
   Tmot = Eigen::Affine3d::Identity();
 
-  pose_current_publisher = nh_.advertise<nav_msgs::Odometry>(par.odom_latest_topic,50);
-  pose_keyframe_publisher = nh_.advertise<nav_msgs::Odometry>(par.odom_keyframe_topic,50);
-  pubsrc_cloud_latest = nh_.advertise<pcl::PointCloud<pcl::PointXYZI> >(par.scan_registered_latest_topic, 1000);
-  pub_cloud_keyframe = nh_.advertise<pcl::PointCloud<pcl::PointXYZI> >(par.scan_registered_keyframe_topic, 1000);
-  sub_rot_est = nh_.subscribe<nav_msgs::Odometry>("/rot_lodestar", 1000, &OdometryKeyframeFuser::CallbackRot, this);
+  pose_current_publisher = node_->create_publisher<nav_msgs::msg::Odometry>(PrivateTopic(par.odom_latest_topic), rclcpp::QoS(50));
+  pose_keyframe_publisher = node_->create_publisher<nav_msgs::msg::Odometry>(PrivateTopic(par.odom_keyframe_topic), rclcpp::QoS(50));
+  pubsrc_cloud_latest = node_->create_publisher<sensor_msgs::msg::PointCloud2>(PrivateTopic(par.scan_registered_latest_topic), rclcpp::QoS(1000));
+  pub_cloud_keyframe = node_->create_publisher<sensor_msgs::msg::PointCloud2>(PrivateTopic(par.scan_registered_keyframe_topic), rclcpp::QoS(1000));
+  Tbr = std::make_unique<tf2_ros::TransformBroadcaster>(node_);
+  sub_rot_est = node_->create_subscription<nav_msgs::msg::Odometry>(
+      PrivateTopic("/rot_lodestar"), rclcpp::QoS(1000),
+      std::bind(&OdometryKeyframeFuser::CallbackRot, this, std::placeholders::_1));
   if(!disable_callback) {
-    cout<<"subscribe<sensor_msgs::PointCloud2>("<<par.input_points_topic<<")"<<endl;
-    
-    pointcloud_callback = nh_.subscribe<sensor_msgs::PointCloud2>(par.input_points_topic, 1000,
-                                                                  &OdometryKeyframeFuser::pointcloudCallback, this,
-                                                                  ros::TransportHints().tcpNoDelay(true));
+    cout<<"subscribe<sensor_msgs::msg::PointCloud2>("<<par.input_points_topic<<")"<<endl;
+
+    pointcloud_callback = node_->create_subscription<sensor_msgs::msg::PointCloud2>(
+        PrivateTopic(par.input_points_topic), rclcpp::QoS(1000),
+        [this](const sensor_msgs::msg::PointCloud2::ConstSharedPtr& msg) {
+          this->pointcloudCallback(msg);
+        });
   }
   else
     cout<<"callback disabled"<<endl;
@@ -93,8 +99,8 @@ pcl::PointXYZI OdometryKeyframeFuser::Transform(const Eigen::Affine3d& T, pcl::P
   p2.intensity = p.intensity;
   return p2;
 }
-nav_msgs::Odometry OdometryKeyframeFuser::FormatOdomMsg(const Eigen::Affine3d& T, const Eigen::Affine3d& Tmot, const ros::Time& t, Matrix6d& Cov){
-  nav_msgs::Odometry odom_msg;
+nav_msgs::msg::Odometry OdometryKeyframeFuser::FormatOdomMsg(const Eigen::Affine3d& T, const Eigen::Affine3d& Tmot, const rclcpp::Time& t, Matrix6d& Cov){
+  nav_msgs::msg::Odometry odom_msg;
 
   //double d = Tmot.translation().norm();
   Eigen::MatrixXd cov_1_36(Cov);
@@ -108,7 +114,7 @@ nav_msgs::Odometry OdometryKeyframeFuser::FormatOdomMsg(const Eigen::Affine3d& T
   odom_msg.header.stamp = t;
   odom_msg.header.frame_id = par.odometry_link_id;
   odom_msg.child_frame_id = "sensor";
-  tf::poseEigenToMsg( T, odom_msg.pose.pose);
+  odom_msg.pose.pose = tf2::toMsg(T);
   return odom_msg;
 }
 pcl::PointCloud<pcl::PointXYZI> OdometryKeyframeFuser::FormatScanMsg(pcl::PointCloud<pcl::PointXYZI>& cloud_in, Eigen::Affine3d& T){
@@ -122,20 +128,20 @@ pcl::PointCloud<pcl::PointXYZI> OdometryKeyframeFuser::FormatScanMsg(pcl::PointC
 
 void OdometryKeyframeFuser::processFrame(pcl::PointCloud<pcl::PointXYZI>::Ptr& cloud,Eigen::Affine3d& Trot) {
 
-  ros::Time t0 = ros::Time::now();
+  const auto t0 = std::chrono::steady_clock::now();
   if(par.compensate)
     Compensate(*cloud, Tmot);
 
-  ros::Time t;
+  rclcpp::Time t;
   pcl_conversions::fromPCL(cloud->header.stamp, t);
 
   std::vector<Matrix6d> cov_vek;
   std::vector<lodestar_odom::MapNormalPtr> scans_vek;
   std::vector<Eigen::Affine3d> T_vek;
-  ros::Time t1 = ros::Time::now();
+  const auto t1 = std::chrono::steady_clock::now();
   lodestar_odom::MapNormalPtr Pcurrent = lodestar_odom::MapNormalPtr(new MapPointNormal(cloud, par.res, Eigen::Vector2d(0,0), par.weight_intensity_, par.use_raw_pointcloud));
 
-  ros::Time t2 = ros::Time::now();
+  const auto t2 = std::chrono::steady_clock::now();
   Eigen::Affine3d Tguess;
   if(par.use_guess)
     Tguess = T_prev*Tmot;
@@ -154,9 +160,17 @@ void OdometryKeyframeFuser::processFrame(pcl::PointCloud<pcl::PointXYZI>::Ptr& c
 
   bool success = true;
   if(!par.disable_registration)
-    bool success = radar_reg->Register(scans_vek, T_vek, cov_vek, par.soft_constraint);
+    // NOTE (ROS 1 -> ROS 2 port): the inner declaration shadows the outer
+    // `success`, so the registration result is discarded and `success` stays
+    // true for the rest of this function. This is inherited verbatim from the
+    // ROS 1 implementation and is deliberately NOT fixed here, because
+    // removing the shadow changes the algorithm's behaviour: the
+    // "registration failure" branch below would start firing (and call
+    // exit(0)), and failed frames would no longer be fused. Fix it in a
+    // separate, deliberate change if that is what you want.
+    { [[maybe_unused]] bool success = radar_reg->Register(scans_vek, T_vek, cov_vek, par.soft_constraint); }
 
-  ros::Time t3 = ros::Time::now();
+  const auto t3 = std::chrono::steady_clock::now();
 
   if(success==false){
     cout<<"registration failure"<<radar_reg->summary_.FullReport()<<endl;
@@ -172,19 +186,19 @@ void OdometryKeyframeFuser::processFrame(pcl::PointCloud<pcl::PointXYZI>::Ptr& c
 
   MapPointNormal::PublishMap("/current_normals", Pcurrent, Tcurrent, par.odometry_link_id,-1,0.5);
   pcl::PointCloud<pcl::PointXYZI> cld_latest = FormatScanMsg(*cloud, Tcurrent);
-  nav_msgs::Odometry msg_current = FormatOdomMsg(Tcurrent*Trot, Tmot, t, cov_vek.back());
-  pubsrc_cloud_latest.publish(cld_latest);
-  pose_current_publisher.publish(msg_current);
+  nav_msgs::msg::Odometry msg_current = FormatOdomMsg(Tcurrent*Trot, Tmot, t, cov_vek.back());
+  {
+    sensor_msgs::msg::PointCloud2 cloud_msg;
+    pcl::toROSMsg(cld_latest, cloud_msg);
+    pubsrc_cloud_latest->publish(cloud_msg);
+  }
+  pose_current_publisher->publish(msg_current);
   if(par.publish_tf_){
-    geometry_msgs::TransformStamped transformStamped;
+    geometry_msgs::msg::TransformStamped transformStamped = tf2::eigenToTransform(Tcurrent);
     transformStamped.header.stamp = msg_current.header.stamp;
-    transformStamped.header.frame_id = msg_current.header.frame_id;
-
-    tf::Transform Tf;
-    std::vector<tf::StampedTransform> trans_vek;
-    tf::transformEigenToTF(Tcurrent, Tf);
-    trans_vek.push_back(tf::StampedTransform(Tf, t, par.odometry_link_id, "radar_link"));
-    Tbr.sendTransform(trans_vek);
+    transformStamped.header.frame_id = par.odometry_link_id;
+    transformStamped.child_frame_id = "radar_link";
+    Tbr->sendTransform(transformStamped);
   }
 
   const Eigen::Affine3d Tkeydiff = keyframes_.back().first.inverse()*Tcurrent;
@@ -197,14 +211,18 @@ void OdometryKeyframeFuser::processFrame(pcl::PointCloud<pcl::PointXYZI>::Ptr& c
     distance_traveled += Tkeydiff.translation().norm();
     Tprev_fused = Tcurrent;
     pcl::PointCloud<pcl::PointXYZI> cld_keyframe = FormatScanMsg(*cloud, Tcurrent);
-    nav_msgs::Odometry msg_keyframe = FormatOdomMsg(Tcurrent*Trot, Tkeydiff, t, cov_vek.back());
-    pub_cloud_keyframe.publish(cld_keyframe);
-    pose_keyframe_publisher.publish(msg_keyframe);
+    nav_msgs::msg::Odometry msg_keyframe = FormatOdomMsg(Tcurrent*Trot, Tkeydiff, t, cov_vek.back());
+    {
+      sensor_msgs::msg::PointCloud2 cloud_msg;
+      pcl::toROSMsg(cld_keyframe, cloud_msg);
+      pub_cloud_keyframe->publish(cloud_msg);
+    }
+    pose_keyframe_publisher->publish(msg_keyframe);
 
     frame_nr_++;
     AddToReference(keyframes_, Pcurrent, Tprev_fused, par.submap_scan_size);
   }
-  ros::Time t4 = ros::Time::now();
+  const auto t4 = std::chrono::steady_clock::now();
   lodestar_odom::timing.Document("compensate", ToMs(t1-t0));
   lodestar_odom::timing.Document("build_normals", ToMs(t2-t1));
   lodestar_odom::timing.Document("register", ToMs(t3-t2));
@@ -213,48 +231,45 @@ void OdometryKeyframeFuser::processFrame(pcl::PointCloud<pcl::PointXYZI>::Ptr& c
 
 }
 
-void OdometryKeyframeFuser::pointcloudCallback(const sensor_msgs::PointCloud2::ConstPtr& msg_in){
+void OdometryKeyframeFuser::pointcloudCallback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr& msg_in){
 
   //cout<<"callback???????????????????????????????????????????1"<<endl;
-  ros::Time t = ros::Time::now();
+  const auto t = std::chrono::steady_clock::now();
   pcl::PointCloud<pcl::PointXYZI>::Ptr cloud(new pcl::PointCloud<pcl::PointXYZI>());
   pcl::fromROSMsg (*msg_in, *cloud);
-  pcl_conversions::toPCL(msg_in->header.stamp, cloud->header.stamp);
+  pcl_conversions::toPCL(rclcpp::Time(msg_in->header.stamp), cloud->header.stamp);
   //this->processFrame(cloud);
   nr_callbacks_++;
-  ros::Time t2 = ros::Time::now();
-  lodestar_odom::timing.Document("Registration-full",lodestar_odom::ToMs(t2-t));
+  lodestar_odom::timing.Document("Registration-full", ToMsSince(t));
 }
 
 
 void OdometryKeyframeFuser::pointcloudCallback(const pcl::PointCloud<pcl::PointXYZI>::Ptr& msg_in, Eigen::Affine3d &Tcurr){
   //cout<<"callback???????????????????????????????????????????2"<<endl;
-  ros::Time t = ros::Time::now();
+  const auto t = std::chrono::steady_clock::now();
   pcl::PointCloud<pcl::PointXYZI>::Ptr cloud(new pcl::PointCloud<pcl::PointXYZI>());
   *cloud = *msg_in;
   cloud->header = msg_in->header;
   //this->processFrame(cloud);
   nr_callbacks_++;
   Tcurr = Tcurrent;
-  ros::Time t2 = ros::Time::now();
-  lodestar_odom::timing.Document("Registration",lodestar_odom::ToMs(t2-t));
+  lodestar_odom::timing.Document("Registration", ToMsSince(t));
 }
 
 void OdometryKeyframeFuser::pointcloudCallback(const pcl::PointCloud<pcl::PointXYZI>::Ptr& msg_in, Eigen::Affine3d &Tcurr, Eigen::Affine3d &Trot){
   //cout<<"callback???????????????????????????????????????????3"<<endl;
-  ros::Time t = ros::Time::now();
+  const auto t = std::chrono::steady_clock::now();
   pcl::PointCloud<pcl::PointXYZI>::Ptr cloud(new pcl::PointCloud<pcl::PointXYZI>());
   *cloud = *msg_in;
   cloud->header = msg_in->header;
   this->processFrame(cloud, Trot);
   nr_callbacks_++;
   Tcurr = Tcurrent;
-  ros::Time t2 = ros::Time::now();
-  lodestar_odom::timing.Document("Registration",lodestar_odom::ToMs(t2-t));
+  lodestar_odom::timing.Document("Registration", ToMsSince(t));
 }
 
-void OdometryKeyframeFuser::CallbackRot(const nav_msgs::Odometry::ConstPtr &msg){
-  //tf::poseMsgToEigen(msg->pose.pose,Trot);
+void OdometryKeyframeFuser::CallbackRot(const nav_msgs::msg::Odometry::ConstSharedPtr &msg){
+  //tf2::fromMsg(msg->pose.pose, Trot);
 }
 
 void AddToReference(PoseScanVector& reference, MapNormalPtr cloud,  const Eigen::Affine3d& T, size_t submap_scan_size){
